@@ -1,0 +1,104 @@
+import socket
+import csv
+import sys
+
+
+def scan_ip_range(base_ip, start_host, end_host, ports_to_scan):
+    """
+    Scans a range of IP addresses on a list of specific ports.
+    Returns a list of (ip, hostname, open_ports) for online devices.
+    """
+    online_hosts = []
+    print(f"Scanning {base_ip}{start_host} to {base_ip}{end_host}...")
+
+    # Go through each host number in the range (e.g., 1 to 254)
+    for i in range(start_host, end_host + 1):
+        ip = f"{base_ip}{i}"
+        found_open_ports = []  # A list to hold open ports for *this* IP
+
+        # Now, loop through each port we want to check
+        for port in ports_to_scan:
+            try:
+                # Create a new socket for each port attempt
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(0.2)  # A shorter timeout is better for multi-port scans
+
+                # Try to connect. connect_ex() returns 0 on success.
+                result = s.connect_ex((ip, port))
+
+                if result == 0:
+                    # Success! This port is open.
+                    found_open_ports.append(port)
+
+                s.close()
+
+            except socket.error:
+                pass  # Ignore connection errors
+
+        # After checking all ports, see if we found any
+        if found_open_ports:
+            # This host is online! At least one port was open.
+            hostname = "Unknown"
+            try:
+                # Now, try to get its hostname (device name)
+                hostname = socket.gethostbyaddr(ip)[0]
+            except socket.herror:
+                hostname = "Unknown"  # Default if lookup fails
+
+            # Add the device and its open ports to our main list
+            online_hosts.append((ip, hostname, found_open_ports))
+            print(f"Found Device: {ip} - {hostname} - Open Ports: {found_open_ports}")
+
+    return online_hosts
+
+
+def save_to_csv(results, filename):
+    """Saves the list of found devices and their open ports to a CSV file."""
+    try:
+        with open(filename, 'w', newline='') as f:
+            writer = csv.writer(f)
+
+            # Write the new header row
+            writer.writerow(["IP Address", "Hostname", "Open Ports"])
+
+            # Write all the data
+            for ip, hostname, ports in results:
+                # Convert the list of ports [80, 443] to a string "80, 443"
+                ports_str = ", ".join(str(p) for p in ports)
+                writer.writerow([ip, hostname, ports_str])
+
+        print(f"\n[+] Results successfully saved to {filename}")
+    except IOError as e:
+        print(f"\n[-] Oops, couldn't save the file: {e}")
+
+
+# --- Main execution ---
+if __name__ == "__main__":
+
+    # --- CONFIGURATION ---
+    # Change these values to match the network you want to scan
+    NETWORK_CONFIG = {
+        "base_ip": "172.20.10.",  # Your network's base IP
+        "start_host": 1,  # Start scanning from this host number
+        "end_host": 254,  # Stop scanning at this host number
+        "ports_to_scan": [80, 135, 443, 445]  # Add any ports you want to check
+    }
+
+    # Set a simple, static filename
+    output_filename = "network_scan_results.csv"
+
+    # 1. Run the scan
+    found_devices = scan_ip_range(
+        NETWORK_CONFIG["base_ip"],
+        NETWORK_CONFIG["start_host"],
+        NETWORK_CONFIG["end_host"],
+        NETWORK_CONFIG["ports_to_scan"]  # Pass the list of ports
+    )
+
+    # 2. Save the results (if we found anything)
+    if found_devices:
+        save_to_csv(found_devices, output_filename)
+    else:
+        print("\nNo online devices found in the specified range with those ports open.")
+
+    print("\nProcess finished.")
